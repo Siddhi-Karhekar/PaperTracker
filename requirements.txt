@@ -1,0 +1,31 @@
+# Core
+pandas>=2.0
+numpy>=1.24
+
+# NSE historical data (Bhavcopy + indices, actively maintained)
+jugaad-data>=0.28
+
+# Fallback / cross-check data source (many NSE tickers available via .NS suffix)
+yfinance>=0.2
+
+# HTTP
+requests>=2.31
+
+# Storage
+# sqlite3 is stdlib, no install needed
+
+# Visualization
+matplotlib>=3.7
+plotly>=5.18
+
+# Dashboard (Phase 8)
+streamlit>=1.32
+
+# Live data (Phase 7)
+websockets>=12.0
+
+# Testing
+pytest>=8.0
+
+# Env config
+python-dotenv>=1.0
