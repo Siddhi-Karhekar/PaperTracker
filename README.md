@@ -51,6 +51,16 @@ signal = strategy.run(df)  # pd.Series of {-1, 0, 1}, aligned to df's index
 
 `Strategy` (in `strategy/base.py`) is the interface every strategy plugs into: implement `generate_signals(df) -> pd.Series` and `run()` handles input/output validation for you. Signals represent *target position* (long/flat/short) at each bar, not one-shot trade instructions -- the execution simulator (Phase 3) is what turns position changes into actual orders.
 
+Turn signals into realistic filled trades:
+
+```python
+from engine.execution import simulate_execution, CostModel
+
+trades = simulate_execution(df, signal, cost_model=CostModel(), quantity_per_unit=10)
+```
+
+`simulate_execution` fixes the most common backtest bug (look-ahead bias) by executing every position change at the **next bar's open**, never the signal bar's own close -- a signal known at bar t's close can't be acted on until bar t+1. Each fill also gets a realistic NSE delivery-equity cost breakdown (STT, exchange transaction charges, stamp duty, GST, DP charges) via `CostModel` -- all rates are approximate defaults and configurable; verify current rates before citing exact numbers. Position sizing here is a simple fixed-quantity-per-signal-unit model; Phase 4's portfolio tracker will size trades from real, cash-constrained capital by calling `engine.execution.calculate_fill()` directly.
+
 Run tests:
 
 ```bash
@@ -70,7 +80,7 @@ pytest
 - [x] Phase 0 — Setup
 - [x] Phase 1 — Data layer
 - [x] Phase 2 — Strategy engine
-- [ ] Phase 3 — Execution simulator
+- [x] Phase 3 — Execution simulator
 - [ ] Phase 4 — Portfolio and risk tracker
 - [ ] Phase 5 — Performance reporting
 - [ ] Phase 6 — Walk-forward validation
