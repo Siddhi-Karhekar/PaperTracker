@@ -37,6 +37,20 @@ python -m data.loader SBIN --start 2020-01-01 --end 2024-12-31
 
 Cached data lives per-symbol under `data/cache/<SYMBOL>.csv`; repeat calls only fetch the date ranges not already cached. Use `--force-refresh` to ignore the cache.
 
+Generate signals from a strategy:
+
+```python
+from datetime import date
+from data.loader import fetch_ohlcv
+from strategy.moving_average import MovingAverageCrossover
+
+df = fetch_ohlcv("SBIN", date(2015, 1, 1), date(2024, 12, 31))
+strategy = MovingAverageCrossover(fast_window=50, slow_window=200)
+signal = strategy.run(df)  # pd.Series of {-1, 0, 1}, aligned to df's index
+```
+
+`Strategy` (in `strategy/base.py`) is the interface every strategy plugs into: implement `generate_signals(df) -> pd.Series` and `run()` handles input/output validation for you. Signals represent *target position* (long/flat/short) at each bar, not one-shot trade instructions -- the execution simulator (Phase 3) is what turns position changes into actual orders.
+
 Run tests:
 
 ```bash
@@ -55,7 +69,7 @@ pytest
 
 - [x] Phase 0 — Setup
 - [x] Phase 1 — Data layer
-- [ ] Phase 2 — Strategy engine
+- [x] Phase 2 — Strategy engine
 - [ ] Phase 3 — Execution simulator
 - [ ] Phase 4 — Portfolio and risk tracker
 - [ ] Phase 5 — Performance reporting
