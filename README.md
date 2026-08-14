@@ -29,7 +29,19 @@ pip install -r requirements.txt
 
 ## How to run
 
-*(Fill in once Phase 1+ is built.)*
+Fetch and validate NSE OHLCV data (tries the NSE historical API first, falls back to yfinance's `.NS` ticker if NSE errors out):
+
+```bash
+python -m data.loader SBIN --start 2020-01-01 --end 2024-12-31
+```
+
+Cached data lives per-symbol under `data/cache/<SYMBOL>.csv`; repeat calls only fetch the date ranges not already cached. Use `--force-refresh` to ignore the cache.
+
+Run tests:
+
+```bash
+pytest
+```
 
 ## Results
 
@@ -42,7 +54,7 @@ pip install -r requirements.txt
 ## Build plan / progress
 
 - [x] Phase 0 — Setup
-- [ ] Phase 1 — Data layer
+- [x] Phase 1 — Data layer
 - [ ] Phase 2 — Strategy engine
 - [ ] Phase 3 — Execution simulator
 - [ ] Phase 4 — Portfolio and risk tracker
