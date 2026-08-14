@@ -61,6 +61,20 @@ trades = simulate_execution(df, signal, cost_model=CostModel(), quantity_per_uni
 
 `simulate_execution` fixes the most common backtest bug (look-ahead bias) by executing every position change at the **next bar's open**, never the signal bar's own close -- a signal known at bar t's close can't be acted on until bar t+1. Each fill also gets a realistic NSE delivery-equity cost breakdown (STT, exchange transaction charges, stamp duty, GST, DP charges) via `CostModel` -- all rates are approximate defaults and configurable; verify current rates before citing exact numbers. Position sizing here is a simple fixed-quantity-per-signal-unit model; Phase 4's portfolio tracker will size trades from real, cash-constrained capital by calling `engine.execution.calculate_fill()` directly.
 
+Run a full backtest with real cash-aware position sizing and a daily equity curve:
+
+```python
+from engine.portfolio import run_backtest
+from engine.execution import CostModel
+
+result = run_backtest(df, signal, cost_model=CostModel(), initial_capital=100_000, position_size_pct=0.95)
+result.equity_curve   # date, cash, quantity_held, position_value, total_equity -- one row per trading day
+result.trades         # full trade log
+result.final_equity   # portfolio value on the last day
+```
+
+`run_backtest` reuses the same next-bar-open execution timing and cost model from Phase 3 -- it only adds position sizing (from real available cash, capped by `position_size_pct`) and never lets cash go negative. Shorting is rejected unless `allow_short=True` is passed explicitly.
+
 Run tests:
 
 ```bash
@@ -81,7 +95,7 @@ pytest
 - [x] Phase 1 — Data layer
 - [x] Phase 2 — Strategy engine
 - [x] Phase 3 — Execution simulator
-- [ ] Phase 4 — Portfolio and risk tracker
+- [x] Phase 4 — Portfolio and risk tracker
 - [ ] Phase 5 — Performance reporting
 - [ ] Phase 6 — Walk-forward validation
 - [ ] Phase 7 — Live data extension (optional)

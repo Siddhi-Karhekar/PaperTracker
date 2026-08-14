@@ -111,7 +111,7 @@ def calculate_fill(price: float, quantity: int, side: str, cost_model: CostModel
     )
 
 
-def _shift_to_next_bar_execution(df: pd.DataFrame, signal: pd.Series) -> pd.DataFrame:
+def shift_to_next_bar_execution(df: pd.DataFrame, signal: pd.Series) -> pd.DataFrame:
     """
     Find every bar where the target position changes, and map it to an
     execution at the *next* bar's open. This is the look-ahead bias fix:
@@ -182,7 +182,7 @@ def simulate_execution(
     Signal changes on the final bar of `df` are dropped (no next-bar open
     exists to execute at) and logged rather than silently ignored.
     """
-    trade_dates = _shift_to_next_bar_execution(df, signal)
+    trade_dates = shift_to_next_bar_execution(df, signal)
     if trade_dates.empty:
         return _empty_trades_frame()
 
