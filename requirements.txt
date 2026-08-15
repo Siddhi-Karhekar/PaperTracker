@@ -21,8 +21,9 @@ plotly>=5.18
 # Dashboard (Phase 8)
 streamlit>=1.32
 
-# Live data (Phase 7)
-websockets>=12.0
+# Live data (Phase 7) -- asyncio (stdlib) drives the event loop; NSEPollingFeed
+# reuses jugaad-data's NSELive REST client above. NSE has no free public
+# WebSocket for retail use, so there's no separate websockets dependency here.
 
 # Testing
 pytest>=8.0

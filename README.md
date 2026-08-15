@@ -112,6 +112,22 @@ print(result.out_of_sample_report.summary())  # the metrics that actually matter
 
 Each window picks parameters using *only* its train segment, then is scored on the following unseen test segment -- rolling forward through the full history. The stitched `out_of_sample_report` is the honest answer to "how would this have performed with periodic re-tuning on data I hadn't seen yet," which is a fundamentally different question than fitting one parameter set to the whole history at once.
 
+### Live paper trading (`*** PAPER TRADING -- NOT REAL FUNDS ***`)
+
+Run the identical strategy code against a live or simulated price feed:
+
+```bash
+# Simulated (default) -- replays real held-back history as "live" ticks, works any time, no network needed
+python -m live.paper_trader SBIN
+
+# Live -- polls real NSE quotes, only during market hours (9:15-15:30 IST, Mon-Fri)
+python -m live.paper_trader SBIN --live
+```
+
+NSE doesn't offer free public WebSocket tick data for retail use without a broker account, so `NSEPollingFeed` polls NSE's public quote endpoint on an interval instead -- an honest, documented simplification rather than a silently cut corner. `SimulatedFeed` replays historical bars as ticks so the pipeline is demoable any time, not just during Indian market hours.
+
+`live/feed.py` normalizes both sources into the same `Tick` event; `live/paper_trader.py`'s `PaperTrader` maintains an in-progress "today" bar from incoming ticks, commits it to history once the day rolls over, and re-runs the *same* `Strategy` and `engine.execution.calculate_fill` used in the backtest -- no separate live-only logic path. No real broker connection, no real orders, ever.
+
 Run tests:
 
 ```bash
@@ -135,7 +151,7 @@ pytest
 - [x] Phase 4 — Portfolio and risk tracker
 - [x] Phase 5 — Performance reporting
 - [x] Phase 6 — Walk-forward validation
-- [ ] Phase 7 — Live data extension (optional)
+- [x] Phase 7 — Live data extension (optional)
 - [ ] Phase 8 — Dashboard
 - [ ] Phase 9 — Documentation and polish
 
