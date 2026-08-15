@@ -128,6 +128,14 @@ NSE doesn't offer free public WebSocket tick data for retail use without a broke
 
 `live/feed.py` normalizes both sources into the same `Tick` event; `live/paper_trader.py`'s `PaperTrader` maintains an in-progress "today" bar from incoming ticks, commits it to history once the day rolls over, and re-runs the *same* `Strategy` and `engine.execution.calculate_fill` used in the backtest -- no separate live-only logic path. No real broker connection, no real orders, ever.
 
+### Dashboard
+
+```bash
+streamlit run dashboard/app.py
+```
+
+Pick a symbol, date range, and strategy parameters in the sidebar and click **Run backtest** to see the equity curve vs. buy-and-hold, a metrics table, the trade log, and (optionally) a full walk-forward validation panel with its own out-of-sample equity curve. Below that, **Start live demo** runs the simulated paper-trading ticker from Phase 7 right in the browser -- this is the page to actually pull up in an interview.
+
 Run tests:
 
 ```bash
@@ -152,7 +160,7 @@ pytest
 - [x] Phase 5 — Performance reporting
 - [x] Phase 6 — Walk-forward validation
 - [x] Phase 7 — Live data extension (optional)
-- [ ] Phase 8 — Dashboard
+- [x] Phase 8 — Dashboard
 - [ ] Phase 9 — Documentation and polish
 
 ## Project structure
