@@ -20,8 +20,16 @@ ever. ***
 
 from __future__ import annotations
 
+import sys
 import time
 from datetime import date, timedelta
+from pathlib import Path
+
+# Streamlit doesn't reliably put the project root on sys.path (it depends
+# on the working directory `streamlit run` was launched from), so the
+# project's own packages (data, engine, strategy, ...) can fail to import
+# even when run correctly. Force it explicitly rather than relying on cwd.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import plotly.graph_objects as go
 import streamlit as st
