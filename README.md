@@ -2,11 +2,11 @@
 
 A backtesting engine for NSE (Nifty 50) equities that models realistic transaction costs and slippage, reports risk-adjusted performance, and extends into live paper trading using the same strategy code.
 
-> Status: Phase 0 (setup) complete. This README will be filled in properly in Phase 9.
-
 ## The problem
 
-*(Fill in at the end — plain-English framing of what this solves and why a naive backtest is misleading.)*
+"Would this trading idea have actually worked?" is a much harder question than it sounds. Most first-attempt backtests quietly answer a different, easier question -- "does this idea look good on a chart if I let it cheat a little?" -- because they let a strategy trade at a price it couldn't have known yet (look-ahead bias), ignore brokerage/taxes/slippage entirely, and get tuned once against the full history until the numbers look good, without ever being checked against data the strategy didn't get to see.
+
+This project answers the harder question properly: signals are computed only from information available at the time, every trade executes at the next bar's open (not the signal bar's own close) with a real NSE cost breakdown applied, and strategy parameters are validated with walk-forward testing -- picked on a training window, scored on the following unseen window, rolled forward through history -- rather than fit once to the whole dataset. The same strategy code that runs in the backtest also runs, unchanged, against live (or simulated-live) prices in paper-trading mode, which is the architectural claim the rest of this README backs up with actual code, not just a diagram.
 
 ## Architecture
 
@@ -144,11 +144,46 @@ pytest
 
 ## Results
 
-*(Fill in at the end — Sharpe ratio, max drawdown, equity curve vs. buy-and-hold benchmark, with real numbers.)*
+SBIN, 50/200-day MA crossover, 2021-08-15 to 2026-08-14 (5 years), Rs. 100,000 starting capital, real NSE cost model applied. Generated with `python -m scripts.generate_results` -- see that script to reproduce these numbers or run them against a different symbol/period.
+
+**Full-period backtest** (one parameter set fit once to the whole 5 years):
+
+| Metric | Strategy | Buy & hold |
+|---|---|---|
+| Total return | +55.99% | +151.70% |
+| Annualized return | +9.46% | +20.63% |
+| Sharpe ratio | 0.57 | -- |
+| Max drawdown | -22.75% | -- |
+| Win rate | 50.0% (4 round trips) | -- |
+| Turnover | 1.70x/yr | -- |
+
+**Walk-forward validation** (params re-picked every ~2 years on a train window, tested on the following ~6 months, out-of-sample, 5 rolling windows):
+
+| Metric | Strategy (out-of-sample) | Buy & hold |
+|---|---|---|
+| Total return | +79.60% | +94.38% |
+| Annualized return | +26.39% | +30.46% |
+| Sharpe ratio | 1.21 | -- |
+| Max drawdown | -19.14% | -- |
+| Win rate | 50.0% (2 round trips) | -- |
+
+**Honest read of these numbers:** neither version beat buy-and-hold over this specific window -- SBIN was in a strong, fairly persistent uptrend for most of these 5 years, and a trend-following crossover strategy structurally gives up some of a strong monotonic run by design (it enters after a trend is confirmed and exits after it reverses, never catching the exact top or bottom). That's an expected, well-understood property of this strategy family, not a bug in the implementation.
+
+What the walk-forward result *does* show is the value of the validation step itself: re-tuning periodically and testing only on unseen data more than doubled the Sharpe ratio (0.57 -> 1.21) and reduced the max drawdown (-22.75% -> -19.14%) versus fitting one parameter set to the whole history and calling it done. That's the actual point of Phase 6 -- it doesn't promise the strategy beats the market, it makes the "how good is this really" number honest.
+
+**Demo video:** not recorded yet -- a 2-3 minute walkthrough of `streamlit run dashboard/app.py` (run a backtest, toggle walk-forward validation, run the live paper-trading demo) is worth adding to this README and your resume/LinkedIn before applying anywhere.
 
 ## Limitations
 
-*(Fill in at the end — honest caveats: no backtest guarantees future performance, data/strategy selection bias, etc.)*
+- **No backtest guarantees future performance.** These results are specific to SBIN over this one 5-year window; a different symbol, period, or market regime (sideways/choppy markets in particular) would produce different, possibly much worse, numbers. Trend-following strategies like this one are known to underperform buy-and-hold during strong sustained trends and outperform during choppy or declining markets -- the numbers above reflect that.
+- **Data source is a public website scraper, not a licensed feed.** `jugaad-data` wraps NSE's public historical API, which can change format or rate-limit without notice; the yfinance fallback exists for exactly that reason. Cache what you use for anything you plan to rely on.
+- **Cost model rates are approximate.** STT, exchange transaction charges, stamp duty, GST, and DP charges in `CostModel` are illustrative defaults for NSE delivery-equity trades, not live-verified current rates -- update them before treating exact rupee figures as authoritative.
+- **Split/bonus adjustment is heuristic, not exact.** `data.loader.validate_ohlcv` flags large overnight price jumps as *potential* splits but doesn't auto-adjust historical prices. A real corporate action during the backtest period could distort signals or returns if the price series isn't manually checked.
+- **Single symbol, single strategy family at a time.** The portfolio tracker (Phase 4) supports one instrument per backtest; there's no multi-asset allocation or correlation modeling. The stretch goal of combining two uncorrelated strategies isn't implemented.
+- **No shorting mechanics.** `allow_short=True` exists but models shorting as simple negative inventory with no borrow cost, margin requirement, or availability constraint -- unrealistic for real short-selling, which is why the default strategy is long-only.
+- **Walk-forward stitching assumes non-overlapping test windows** (`step_days == test_days`); overlapping windows return per-window results but no single combined out-of-sample curve, since overlapping periods can't be concatenated into one path without double-counting.
+- **Live paper trading is a polling adapter, not true tick data**, and its signal can flicker intraday since it's evaluated against "today's close so far" rather than a finalized bar -- documented in detail in `live/paper_trader.py`.
+- **This is a paper-trading and research project, not investment advice or a production trading system.** Nothing here should be read as a recommendation to trade SBIN or any other security.
 
 ## Build plan / progress
 
@@ -161,7 +196,7 @@ pytest
 - [x] Phase 6 — Walk-forward validation
 - [x] Phase 7 — Live data extension (optional)
 - [x] Phase 8 — Dashboard
-- [ ] Phase 9 — Documentation and polish
+- [x] Phase 9 — Documentation and polish (demo video/GIF still pending -- see note below)
 
 ## Project structure
 
@@ -186,6 +221,8 @@ algo-backtester/
 │   └── app.py
 ├── notebooks/
 │   └── exploration.ipynb
+├── scripts/
+│   └── generate_results.py
 ├── tests/
 ├── README.md
 └── requirements.txt
