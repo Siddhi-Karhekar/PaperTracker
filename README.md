@@ -75,6 +75,20 @@ result.final_equity   # portfolio value on the last day
 
 `run_backtest` reuses the same next-bar-open execution timing and cost model from Phase 3 -- it only adds position sizing (from real available cash, capped by `position_size_pct`) and never lets cash go negative. Shorting is rejected unless `allow_short=True` is passed explicitly.
 
+Score the backtest and chart it against buy-and-hold:
+
+```python
+from reporting.metrics import generate_report, plot_equity_curve, plot_drawdown
+
+report = generate_report(result.equity_curve, result.trades, df, initial_capital=100_000)
+print(report.summary())
+
+plot_equity_curve(result.equity_curve, df, initial_capital=100_000, output_path="reports/equity.png")
+plot_drawdown(result.equity_curve, output_path="reports/drawdown.png")
+```
+
+`generate_report` computes total/annualized return, Sharpe ratio, max drawdown (with peak/trough dates), win rate (from realized round-trip P&L, net of costs), annualized turnover, and a buy-and-hold benchmark for comparison -- a strategy that doesn't beat holding the stock outright isn't saying much, so that comparison is always included, never optional.
+
 Run tests:
 
 ```bash
@@ -96,7 +110,7 @@ pytest
 - [x] Phase 2 — Strategy engine
 - [x] Phase 3 — Execution simulator
 - [x] Phase 4 — Portfolio and risk tracker
-- [ ] Phase 5 — Performance reporting
+- [x] Phase 5 — Performance reporting
 - [ ] Phase 6 — Walk-forward validation
 - [ ] Phase 7 — Live data extension (optional)
 - [ ] Phase 8 — Dashboard

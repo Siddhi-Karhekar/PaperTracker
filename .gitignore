@@ -17,6 +17,9 @@ data/cache/*
 # Notebooks checkpoints
 .ipynb_checkpoints/
 
+# Generated charts/reports (regenerable output, not source)
+reports/*.png
+
 # Env / secrets
 .env
 *.env.local
