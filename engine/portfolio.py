@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Union
 
 import pandas as pd
 
@@ -92,8 +93,9 @@ def run_backtest(
     signal: pd.Series,
     cost_model: CostModel = CostModel(),
     initial_capital: float = 100_000.0,
-    position_size_pct: float = 0.95,
+    position_size_pct: Union[float, pd.Series] = 0.95,
     allow_short: bool = False,
+    default_position_size_pct: float = 0.95,
 ) -> BacktestResult:
     """
     df: OHLCV DataFrame (date, open, high, low, close, volume), sorted
@@ -103,11 +105,27 @@ def run_backtest(
         entry (default 0.95). Applies only to entries -- exits always
         close the full held quantity, since the signal's target is 0.
 
+        Can also be a pd.Series aligned to df's index (same length, same
+        positional index) for *dynamic* sizing -- e.g. ml.position_sizing's
+        volatility-scaled sizer, which shrinks the fraction committed when
+        predicted risk is high and grows it when predicted risk is low,
+        instead of always committing the same fixed fraction. Each BUY
+        looks up the value at that execution row; a NaN there (e.g. during
+        the sizer's own model warm-up) falls back to
+        `default_position_size_pct` rather than skipping the trade.
+
     Returns a BacktestResult with a full trade log and a daily
     (not just trade-day) mark-to-market equity curve.
     """
-    if not (0 < position_size_pct <= 1):
+    if isinstance(position_size_pct, pd.Series):
+        if not position_size_pct.index.equals(df.index):
+            raise ValueError("position_size_pct Series must share df's index")
+    elif not (0 < position_size_pct <= 1):
         raise ValueError(f"position_size_pct must be in (0, 1], got {position_size_pct}")
+
+    if not (0 < default_position_size_pct <= 1):
+        raise ValueError(f"default_position_size_pct must be in (0, 1], got {default_position_size_pct}")
+
     if not allow_short and (signal < 0).any():
         raise ValueError(
             "signal contains short positions (-1) but allow_short=False. "
@@ -129,7 +147,7 @@ def run_backtest(
     trades = []
     equity_rows = []
 
-    for _, day in df.iterrows():
+    for row_idx, day in df.iterrows():
         today = day["date"]
 
         if today in scheduled_by_date:
@@ -139,7 +157,17 @@ def run_backtest(
                 execution_price = float(day["open"])
 
                 if position_after > position_before:
-                    cash_to_use = cash * position_size_pct
+                    if isinstance(position_size_pct, pd.Series):
+                        pct = position_size_pct.loc[row_idx]
+                        if pd.isna(pct):
+                            logger.warning(
+                                "position_size_pct is NaN on %s (row %s); falling back to default %.2f.",
+                                today.date(), row_idx, default_position_size_pct,
+                            )
+                            pct = default_position_size_pct
+                    else:
+                        pct = position_size_pct
+                    cash_to_use = cash * pct
                     qty = _max_affordable_buy_quantity(cash_to_use, execution_price, cost_model)
                     if qty <= 0:
                         logger.warning("Insufficient cash to enter a position on %s (cash=%.2f); skipped.", today.date(), cash)

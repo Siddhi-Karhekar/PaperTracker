@@ -125,3 +125,47 @@ def test_run_backtest_no_signal_changes_flat_equity_curve():
 
     assert result.trades.empty
     assert (result.equity_curve["total_equity"] == 1000.0).all()
+
+
+def test_run_backtest_accepts_dynamic_position_size_pct_series():
+    # Same entry as the round-trip test (enters at idx3, open=106), but
+    # sized with a per-row Series instead of a fixed fraction: at the
+    # execution row (idx3), pct=0.5 -> qty = floor(1000*0.5/106) = floor(4.71..) = 4
+    # (versus qty=9 with the fixed 1.0 used in the round-trip test above).
+    df = _make_df(7)
+    signal = pd.Series([0, 0, 1, 1, 0, 0, 0], index=df.index)
+    sizing = pd.Series([1.0] * 7, index=df.index)
+    sizing.loc[3] = 0.5
+
+    result = run_backtest(df, signal, cost_model=ZERO_COST, initial_capital=1000.0, position_size_pct=sizing)
+
+    assert len(result.trades) == 2
+    buy = result.trades.iloc[0]
+    assert buy["quantity"] == 4
+    assert buy["price"] == pytest.approx(106.0)
+
+
+def test_run_backtest_dynamic_sizing_falls_back_to_default_on_nan():
+    # Same setup, but the sizing Series is NaN at the execution row -> falls
+    # back to default_position_size_pct=0.3: qty = floor(1000*0.3/106) = floor(2.83) = 2
+    df = _make_df(7)
+    signal = pd.Series([0, 0, 1, 1, 0, 0, 0], index=df.index)
+    sizing = pd.Series([float("nan")] * 7, index=df.index)
+
+    result = run_backtest(
+        df, signal, cost_model=ZERO_COST, initial_capital=1000.0,
+        position_size_pct=sizing, default_position_size_pct=0.3,
+    )
+
+    assert len(result.trades) == 2
+    buy = result.trades.iloc[0]
+    assert buy["quantity"] == 2
+
+
+def test_run_backtest_rejects_position_size_pct_series_with_mismatched_index():
+    df = _make_df(5)
+    signal = pd.Series([0, 0, 0, 0, 0], index=df.index)
+    bad_sizing = pd.Series([0.5, 0.5, 0.5], index=[0, 1, 2])  # wrong length/index
+
+    with pytest.raises(ValueError, match="index"):
+        run_backtest(df, signal, position_size_pct=bad_sizing)

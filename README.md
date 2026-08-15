@@ -1,6 +1,6 @@
 # Algo Backtester — NSE Equities
 
-A backtesting engine for NSE (Nifty 50) equities that models realistic transaction costs and slippage, reports risk-adjusted performance, and extends into live paper trading using the same strategy code.
+A backtesting engine for NSE (Nifty 50) equities that models realistic transaction costs and slippage, reports risk-adjusted performance, and extends into live paper trading using the same strategy code. Also includes an ML-based strategy and volatility-scaled position sizing with SHAP explainability, and a self-contained NLP chatbot for querying results in plain English.
 
 ## The problem
 
@@ -13,11 +13,17 @@ This project answers the harder question properly: signals are computed only fro
 ```
 Historical data ─┐
                   ├─→ Event dispatcher → Strategy engine → Execution simulator → Portfolio tracker → Performance report
-Live market feed ─┘                                              │
-                                                                   └─→ (live mode) Paper trade executor → Dashboard
+Live market feed ─┘                                              │                      │                   │
+                                                                   └─→ (live mode)         │                   ├─→ SHAP explainability
+                                                                       Paper trade         │                   └─→ NLP Q&A chatbot
+                                                                       executor            └─→ ML volatility
+                                                                                                sizer (optional)
+                                                                                                        │
+                                                                                                        ▼
+                                                                                                   Dashboard
 ```
 
-The strategy engine is written once and used identically in both backtest and live modes.
+The strategy engine is written once and used identically in both backtest and live modes. `MLClassifierStrategy` is a drop-in alternative to `MovingAverageCrossover` at the same "Strategy engine" step -- everything downstream (execution, portfolio, reporting, validation, live trading) treats it identically.
 
 ## Setup
 
@@ -136,6 +142,36 @@ streamlit run dashboard/app.py
 
 Pick a symbol, date range, and strategy parameters in the sidebar and click **Run backtest** to see the equity curve vs. buy-and-hold, a metrics table, the trade log, and (optionally) a full walk-forward validation panel with its own out-of-sample equity curve. Below that, **Start live demo** runs the simulated paper-trading ticker from Phase 7 right in the browser -- this is the page to actually pull up in an interview.
 
+### ML, Explainable AI, and NLP extensions
+
+Beyond the guide's original 9 phases, the project also includes a machine-learning strategy, ML-driven position sizing, SHAP-based explainability, and a self-contained NLP chatbot -- all plugged into the same interfaces the rule-based system uses, not a separate parallel pipeline.
+
+**ML signal strategy** (`strategy/ml_signal.py`): `MLClassifierStrategy` predicts, from technical features (`ml/features.py`: RSI, MACD, moving-average ratios, rolling volatility, momentum, Bollinger %B), whether price will be higher some N days ahead, and thresholds the predicted probability into the same `{-1, 0, 1}` signal every strategy produces. It implements the same `Strategy` interface as `MovingAverageCrossover`, so it runs through `run_backtest`, `walk_forward_validate`, and live paper trading unchanged.
+
+```python
+from strategy.ml_signal import MLClassifierStrategy
+
+strategy = MLClassifierStrategy(min_train_rows=252, forward_horizon=5, prob_threshold=0.55)
+signal = strategy.run(df)  # first min_train_rows are forced flat (that span is used to fit the model, not trade)
+```
+
+Leakage matters more here than anywhere else in the project: the first `min_train_rows` of whatever DataFrame it's given are used *only* to fit the model and are forced flat in the output signal; every later row is a genuine out-of-sample prediction from a model that never saw that row's outcome. This is verified directly in `tests/test_ml_signal.py` by inspecting exactly which rows a model was fit and predicted on, not just trusted.
+
+**ML position sizing** (`ml/position_sizing.py`): `VolatilityForecaster` predicts near-term volatility (same train/predict split as above) and `inverse_vol_position_size()` converts that into a position-size fraction -- smaller positions when predicted risk is high, larger when it's low, capped to a sane range. `run_backtest` now accepts this as a per-day `pd.Series` for `position_size_pct` instead of a single fixed float (backward compatible -- a plain float still works exactly as before).
+
+**Explainable AI** (`ml/explain.py`): SHAP (`shap.TreeExplainer`) decomposes each prediction into a per-feature contribution -- which technical indicators pushed a given buy/sell call up or down, and by how much. The dashboard shows both global feature importance (averaged across all predictions) and the breakdown for the single most recent prediction. The additivity property SHAP depends on (`expected_value + sum(shap values) == the model's actual output, exactly`) is checked directly in `tests/test_ml_explain.py` against real fitted models, not assumed from documentation.
+
+**NLP chatbot** (`nlp/qa_engine.py`): a Q&A panel in the dashboard answers questions about the *actual* backtest just run -- "what was the Sharpe ratio," "did it beat buy and hold," "what does drawdown mean," or anything else in plain English -- grounded in real numbers pulled from the `PerformanceReport`. Its primary answer path calls Claude Haiku (`claude-haiku-4-5-20251001`) with those numbers and a system prompt tuned for fast, 1-2 sentence answers, so it handles open-ended phrasing, not just a fixed question set. That path is used whenever `ANTHROPIC_API_KEY` is set and the call succeeds; if the key isn't set, the `anthropic` package isn't installed, or the API call fails for any reason, it falls back automatically to a free, fully offline TF-IDF + cosine-similarity intent classifier (chosen over a trained Naive-Bayes classifier after testing showed it separates real questions from out-of-domain ones far better on this small a training set) mapped to the same report numbers -- so the chatbot always answers something, with or without an API key.
+
+```python
+from nlp.qa_engine import QAEngine
+
+qa = QAEngine(report=report, trades=result.trades, symbol="SBIN")
+qa.answer("did it beat buy and hold")  # grounded in this run's real report, not invented
+```
+
+**Being honest about the ML pieces specifically**: unlike the rule-based strategy, whose properties (no look-ahead, real costs, honest validation) are provable by construction and checked in tests, a trained model's predictive quality depends entirely on whether the patterns it learned generalize -- and daily-bar technical features on a single equity are famously weak, noisy predictors. These modules are included to demonstrate the engineering (leakage-safe train/predict splits, SHAP explainability, a real NLP pipeline), not as a claim that the ML strategy reliably beats the rule-based one. Compare them honestly via `engine.validation.walk_forward_validate` before trusting either with anything.
+
 Run tests:
 
 ```bash
@@ -183,6 +219,8 @@ What the walk-forward result *does* show is the value of the validation step its
 - **No shorting mechanics.** `allow_short=True` exists but models shorting as simple negative inventory with no borrow cost, margin requirement, or availability constraint -- unrealistic for real short-selling, which is why the default strategy is long-only.
 - **Walk-forward stitching assumes non-overlapping test windows** (`step_days == test_days`); overlapping windows return per-window results but no single combined out-of-sample curve, since overlapping periods can't be concatenated into one path without double-counting.
 - **Live paper trading is a polling adapter, not true tick data**, and its signal can flicker intraday since it's evaluated against "today's close so far" rather than a finalized bar -- documented in detail in `live/paper_trader.py`.
+- **The ML strategy is not shown to beat the rule-based one, and shouldn't be assumed to.** `MLClassifierStrategy`'s train/predict split is leakage-safe by construction (verified in tests), but that only guarantees the *evaluation* is honest -- it says nothing about whether daily-bar technical features actually contain enough predictive signal for a single NSE equity to be worth trading on. Small sample sizes (a few years of daily bars is a few hundred to low-thousands of rows) make tree-based models prone to picking up noise. Always compare it against the rule-based strategy via walk-forward validation before drawing conclusions, and treat any edge it shows with real skepticism.
+- **The NLP chatbot's offline fallback is intent-classification over a fixed set of questions, not general understanding.** With `ANTHROPIC_API_KEY` set, the chatbot's primary path is a real LLM call and handles open-ended phrasing. Without a key (or if the call fails), it silently drops to the offline retrieval engine, which answers the specific questions in its training set well (and generalizes reasonably to rephrasings, verified in tests) but will not answer questions outside that scope.
 - **This is a paper-trading and research project, not investment advice or a production trading system.** Nothing here should be read as a recommendation to trade SBIN or any other security.
 
 ## Build plan / progress
@@ -197,6 +235,7 @@ What the walk-forward result *does* show is the value of the validation step its
 - [x] Phase 7 — Live data extension (optional)
 - [x] Phase 8 — Dashboard
 - [x] Phase 9 — Documentation and polish (demo video/GIF still pending -- see note below)
+- [x] Phase 10 (beyond the original guide) — ML strategy, ML position sizing, SHAP explainability, NLP chatbot
 
 ## Project structure
 
@@ -207,11 +246,18 @@ algo-backtester/
 │   └── cache/
 ├── strategy/
 │   ├── base.py
-│   └── moving_average.py
+│   ├── moving_average.py
+│   └── ml_signal.py
 ├── engine/
 │   ├── execution.py
 │   ├── portfolio.py
 │   └── validation.py
+├── ml/
+│   ├── features.py
+│   ├── position_sizing.py
+│   └── explain.py
+├── nlp/
+│   └── qa_engine.py
 ├── live/
 │   ├── feed.py
 │   └── paper_trader.py
