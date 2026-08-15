@@ -89,6 +89,29 @@ plot_drawdown(result.equity_curve, output_path="reports/drawdown.png")
 
 `generate_report` computes total/annualized return, Sharpe ratio, max drawdown (with peak/trough dates), win rate (from realized round-trip P&L, net of costs), annualized turnover, and a buy-and-hold benchmark for comparison -- a strategy that doesn't beat holding the stock outright isn't saying much, so that comparison is always included, never optional.
 
+Validate out-of-sample with walk-forward validation, instead of trusting one parameter set fit to the whole history:
+
+```python
+from engine.validation import walk_forward_validate
+from strategy.moving_average import MovingAverageCrossover
+
+param_grid = [{"fast_window": f, "slow_window": s} for f, s in [(20, 100), (50, 200), (30, 150)]]
+
+result = walk_forward_validate(
+    df,
+    param_grid=param_grid,
+    strategy_factory=lambda **p: MovingAverageCrossover(**p),
+    train_days=252 * 2,   # 2 years to pick params
+    test_days=126,        # ~6 months out-of-sample
+    warmup_days=200,      # >= largest slow_window, so the test window isn't stuck flat during warm-up
+)
+
+print(result.summary_table())          # one row per window: chosen params + out-of-sample metrics
+print(result.out_of_sample_report.summary())  # the metrics that actually matter: pure out-of-sample performance
+```
+
+Each window picks parameters using *only* its train segment, then is scored on the following unseen test segment -- rolling forward through the full history. The stitched `out_of_sample_report` is the honest answer to "how would this have performed with periodic re-tuning on data I hadn't seen yet," which is a fundamentally different question than fitting one parameter set to the whole history at once.
+
 Run tests:
 
 ```bash
@@ -111,7 +134,7 @@ pytest
 - [x] Phase 3 — Execution simulator
 - [x] Phase 4 — Portfolio and risk tracker
 - [x] Phase 5 — Performance reporting
-- [ ] Phase 6 — Walk-forward validation
+- [x] Phase 6 — Walk-forward validation
 - [ ] Phase 7 — Live data extension (optional)
 - [ ] Phase 8 — Dashboard
 - [ ] Phase 9 — Documentation and polish
